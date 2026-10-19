@@ -1,3 +1,7 @@
 Flask==3.1.3
 flask_sqlalchemy==3.1.1
 SQLAlchemy==2.0.52
+
+Bootstrap-Flask==2.5.0
+Flask-WTF==1.3.0
+python-dotenv==1.2.4

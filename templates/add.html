@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from 'bootstrap5/form.html' import render_field %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<h1 class="mb-4 cozy-title">{{ heading }}</h1>
+<form method="post" enctype="multipart/form-data" novalidate style="max-width: 640px;">
+    {{ form.hidden_tag() }}
+    {% for field in form if field.type not in ('SubmitField', 'CSRFTokenField') %}
+        {{ render_field(field) }}
+    {% endfor %}
+    <div class="d-flex gap-2 mt-3">
+        {{ form.submit(class="btn btn-cozy px-4") }}
+        <a href="{{ cancel_url }}" class="btn btn-soft px-4">Cancel</a>
+    </div>
+</form>
+{% endblock %}

@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 instance/
 .DS_Store
+.env
+static/uploads/
+.pytest_cache/
+instruction.md

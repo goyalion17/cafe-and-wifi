@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ cafe.name }}{% endblock %}
+{% block main_class %}container-fluid px-3 px-lg-5{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+
+    .hero { position: relative; height: 380px; border-radius: 1.5rem; overflow: hidden; background: #e8d6bd; box-shadow: 0 10px 30px rgba(111, 67, 40, .18); }
+    .hero img { width: 100%; height: 100%; object-fit: cover; }
+    .hero .overlay { position: absolute; inset: auto 0 0 0; padding: 4rem 2rem 1.75rem; color: #fff; background: linear-gradient(transparent, rgba(60, 35, 20, .78)); }
+    .hero h1 { font-size: clamp(1.7rem, 4vw, 2.6rem); margin: 0 0 .25rem; text-shadow: 0 2px 8px rgba(0,0,0,.35); }
+
+    .tile { background: var(--cozy-card); border: 1px solid var(--cozy-line); border-radius: 1.1rem; padding: 1rem 1.25rem; height: 100%; }
+    .tile .emoji { font-size: 1.6rem; }
+    .tile .label { font-size: .8rem; color: #9a7b60; text-transform: uppercase; letter-spacing: .06em; }
+    .tile .value { font-size: 1.25rem; color: var(--cozy-brown); font-weight: 600; }
+
+    .panel { background: var(--cozy-card); border: 1px solid var(--cozy-line); border-radius: 1.25rem; padding: 1.5rem; }
+    .panel h2 { font-size: 1.15rem; color: var(--cozy-brown); margin-bottom: 1rem; }
+
+    .map-card { border-radius: 1.25rem; overflow: hidden; border: 1px solid var(--cozy-line); box-shadow: 0 6px 18px rgba(111, 67, 40, .12); }
+    #map { height: 320px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="hero mt-3">
+    <img src="{{ cafe.img_url }}" alt="{{ cafe.name }}" data-cafe-img>
+    <div class="overlay">
+        <h1 class="cozy-title">{{ cafe.name }}</h1>
+        <div>&#128205; {{ cafe.location }}, London</div>
+    </div>
+</div>
+
+<div class="row g-4 mt-1 mb-5">
+    <div class="col-lg-7">
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-4"><div class="tile"><div class="emoji">&#9749;</div><div class="label">Coffee from</div><div class="value">{{ cafe.coffee_price or "n/a" }}</div></div></div>
+            <div class="col-6 col-md-4"><div class="tile"><div class="emoji">&#129681;</div><div class="label">Seats</div><div class="value">{{ cafe.seats or "n/a" }}</div></div></div>
+            <div class="col-12 col-md-4"><div class="tile"><div class="emoji">&#127969;</div><div class="label">Area</div><div class="value">{{ cafe.location }}</div></div></div>
+        </div>
+
+        <div class="panel">
+            <h2 class="cozy-title">What you'll find here</h2>
+            <div>
+                {% for emoji, label, ok in [("&#128246;", "Wi-Fi", cafe.has_wifi), ("&#128268;", "Power sockets", cafe.has_sockets), ("&#128222;", "Calls are fine", cafe.can_take_calls), ("&#128699;", "Restroom", cafe.has_toilet)] %}
+                    <span class="amenity {{ 'yes' if ok else 'no' }}"><span>{{ emoji|safe }}</span>{{ label }}</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="map-card">
+            {% if cafe.lat is not none and cafe.lng is not none %}
+                <div id="map"></div>
+            {% else %}
+                <div class="p-4 text-muted">No location on the map for this cafe yet.</div>
+            {% endif %}
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+            <a href="{{ cafe.map_url }}" target="_blank" class="btn btn-cozy">Open in Google Maps</a>
+            {% if is_admin %}
+            <div class="ms-auto d-flex gap-2">
+                <a href="{{ url_for('edit_cafe_page', cafe_id=cafe.id) }}" class="btn btn-sm btn-soft">Edit</a>
+                <form method="post" action="{{ url_for('delete_cafe_page', cafe_id=cafe.id) }}"
+                      onsubmit="return confirm('Delete {{ cafe.name|e }}?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-quiet">Delete this cafe</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if cafe.lat is not none and cafe.lng is not none %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+    const pos = [{{ cafe.lat }}, {{ cafe.lng }}];
+    const map = L.map("map", { scrollWheelZoom: false }).setView(pos, 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19, attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+    L.marker(pos, { icon: L.divIcon({
+        className: "", iconSize: [42, 42], iconAnchor: [21, 42],
+        html: '<div style="width:42px;height:42px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#c96f3b;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center"><span style="transform:rotate(45deg);font-size:18px">☕</span></div>'
+    }) }).addTo(map);
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Cafe & Wifi{% endblock %}</title>
+    {{ bootstrap.load_css() }}
+    <style>
+        :root { --cozy-bg: #faf4ec; --cozy-card: #fffaf3; --cozy-line: #eadcc8; --cozy-brown: #6f4328; --cozy-accent: #c96f3b; --cozy-green: #5b8a5a; }
+        body { background: var(--cozy-bg); color: #3d2b1f; }
+        .cozy-nav { background: #5a3822; }
+        .cozy-title { font-family: Georgia, "Times New Roman", serif; color: var(--cozy-brown); }
+        .btn-cozy { background: var(--cozy-accent); border-color: var(--cozy-accent); color: #fff; border-radius: 2rem; }
+        .btn-cozy:hover { background: #b25e2f; border-color: #b25e2f; color: #fff; }
+        .btn-soft { border-radius: 2rem; color: var(--cozy-brown); border-color: var(--cozy-line); background: transparent; }
+        .btn-soft:hover { background: #f3e6d4; color: var(--cozy-brown); border-color: var(--cozy-line); }
+        .btn-quiet { border-radius: 2rem; color: #a05555; border-color: #e7cfcf; background: transparent; }
+        .btn-quiet:hover { background: #f8e6e6; color: #8a3b3b; border-color: #e7cfcf; }
+        .form-control, .form-select { background: var(--cozy-card); border-color: var(--cozy-line); }
+        .form-control:focus { border-color: var(--cozy-accent); box-shadow: 0 0 0 .2rem rgba(201, 111, 59, .2); }
+        .form-check-input:checked { background-color: var(--cozy-accent); border-color: var(--cozy-accent); }
+        .flash-stack { position: fixed; top: 4rem; left: 50%; transform: translateX(-50%); z-index: 2000; width: min(320px, 92vw); pointer-events: none; }
+        .flash-stack .alert { pointer-events: auto; padding: .5rem .9rem; font-size: .875rem; margin-bottom: .4rem; border-radius: .75rem; transition: opacity .6s, transform .6s; }
+        .flash-stack .alert.leaving { opacity: 0; transform: translateY(-.5rem); }
+        .form-range::-webkit-slider-thumb { background: var(--cozy-accent); }
+        .form-range::-moz-range-thumb { background: var(--cozy-accent); }
+        .amenity { display: inline-flex; align-items: center; gap: .5rem; padding: .55rem 1rem; border-radius: 2rem; margin: 0 .5rem .6rem 0; font-size: .95rem; }
+        .amenity.sm { padding: .15rem .65rem; font-size: .8rem; gap: .35rem; margin: 0 .35rem .35rem 0; }
+        .amenity.yes { background: #e6f0e0; color: #34592f; border: 1px solid #cfe1c7; }
+        .amenity.no { background: transparent; color: #a8998a; border: 1px dashed var(--cozy-line); text-decoration: line-through; }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body>
+<nav class="navbar navbar-expand navbar-dark cozy-nav {% block nav_class %}mb-4{% endblock %}">
+    <div class="container-fluid px-4">
+        <a class="navbar-brand" href="{{ url_for('home') }}">Cafe &amp; Wifi</a>
+        <div class="navbar-nav">
+            {% for endpoint, label in [('home', 'Cafes'), ('add_cafe_page', 'Add cafe'), ('api_docs', 'API docs')] %}
+                {% if request.endpoint == endpoint %}
+                    <span class="nav-link active disabled" aria-current="page" aria-disabled="true">{{ label }}</span>
+                {% else %}
+                    <a class="nav-link" href="{{ url_for(endpoint) }}">{{ label }}</a>
+                {% endif %}
+            {% endfor %}
+        </div>
+        <div class="ms-auto">
+            {% if is_admin %}
+                <form method="post" action="{{ url_for('logout') }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-light rounded-pill">Log out</button>
+                </form>
+            {% elif request.endpoint != 'login' %}
+                <a href="{{ url_for('login') }}" class="btn btn-sm btn-outline-light rounded-pill">Log in</a>
+            {% endif %}
+        </div>
+    </div>
+</nav>
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-stack">
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }} shadow flash" role="alert">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+{% endwith %}
+<main class="{% block main_class %}container{% endblock %}">
+    {% block content %}{% endblock %}
+</main>
+{{ bootstrap.load_js() }}
+<script>
+    // Pleasant placeholder for cafes whose photo is missing. Google returns a 200x200 "broken image" PNG
+    // (HTTP 404) for dead photo links, so the browser does not report an error: detect it by size too.
+    // Pleasant fallback photos for cafes whose own photo is missing (picked by name so cafes differ).
+    const FALLBACKS = [
+        "photo-1554118811-1e0d58224f24", "photo-1495474472287-4d71bcdd2085", "photo-1445116572660-236099ec97a0"
+    ].map(id => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=800&q=70`);
+    function placeholderFor(name) {
+        let h = 0;
+        for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+        return FALLBACKS[h % FALLBACKS.length];
+    }
+    function usePlaceholder(img) {
+        if (!img.dataset.placeholder) { img.dataset.placeholder = "1"; img.src = placeholderFor(img.alt || "?"); }
+    }
+    function checkImage(img) {
+        if (!img.complete) return;
+        if (img.naturalWidth === 0 || (img.naturalWidth === 200 && img.naturalHeight === 200)) usePlaceholder(img);
+    }
+    // Flash messages fade out on their own (errors stay a bit longer); click one to dismiss it at once.
+    document.addEventListener("DOMContentLoaded", () => {
+        document.querySelectorAll(".flash").forEach(box => {
+            const hide = () => { box.classList.add("leaving"); setTimeout(() => box.remove(), 650); };
+            setTimeout(hide, box.classList.contains("alert-success") ? 3500 : 7000);
+            box.addEventListener("click", hide);
+        });
+    });
+    document.addEventListener("DOMContentLoaded", () => {
+        document.querySelectorAll("img[data-cafe-img]").forEach(img => {
+            img.addEventListener("error", () => usePlaceholder(img));
+            img.addEventListener("load", () => checkImage(img));
+            checkImage(img);
+        });
+    });
+</script>
+</body>
+</html>

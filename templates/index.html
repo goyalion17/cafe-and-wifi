@@ -1,11 +1,211 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Cafe&Wifi API</title>
-</head>
-<body>
-    <h1>Welcome to the Cafe & Wifi API</h1>
-    <a href="https://documenter.getpostman.com/view/42581230/2sBYAxQq5h" target="_blank">View API Documentation</a>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Cafes with Wi-Fi in London{% endblock %}
+{% block nav_class %}{% endblock %}
+{% block main_class %}app{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+    .pin { width: 34px; height: 34px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--cozy-accent); border: 2px solid #fff;
+           box-shadow: 0 2px 6px rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; }
+    .pin span { transform: rotate(45deg); font-size: 16px; line-height: 1; }
+    .pin.selected { background: var(--cozy-brown); width: 42px; height: 42px; }
+    #map { flex: 1; }
+    .app { display: grid; grid-template-columns: 220px minmax(0, 1fr) 42%; height: calc(100vh - 56px); }
+    .app > section { overflow-y: auto; padding: 1.25rem; }
+    .map-col { padding: 0 !important; overflow: hidden !important; display: flex; flex-direction: column; border-left: 1px solid var(--cozy-line); }
+    .filters { background: #f4e8d8; border-right: 1px solid var(--cozy-line); }
+    .cafe-item { display: flex; gap: 1rem; padding: .75rem; background: var(--cozy-card); border: 1px solid var(--cozy-line); border-radius: 1.1rem; margin-bottom: .85rem; position: relative; transition: box-shadow .15s, border-color .15s; }
+    .cafe-item:hover, .cafe-item.hover { border-color: var(--cozy-accent); box-shadow: 0 6px 18px rgba(111, 67, 40, .16); }
+    .cafe-item img { width: 220px; height: 120px; object-fit: cover; border-radius: .8rem; flex-shrink: 0; }
+    .cafe-item form { position: relative; z-index: 2; }
+    .cafe-item h2 { font-family: Georgia, "Times New Roman", serif; font-size: 1.15rem; color: var(--cozy-brown); margin: 0 0 .25rem; }
+    .filter-title { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: #9a7b60; margin: 1rem 0 .4rem; }
+    @media (max-width: 991.98px) {
+        .app { display: block; height: auto; }
+        .map-col { height: 60vh; border-left: 0; }
+        .cafe-item { flex-direction: column; }
+        .cafe-item img { width: 100%; height: 160px; }
+    }
+</style>
+{% endblock %}
+{% block content %}
+<section class="filters">
+    <h2 class="h4 mb-3 cozy-title">Filters</h2>
+    <form id="filter-form" method="get" action="{{ url_for('home') }}">
+        <input id="search" name="q" value="{{ q }}" type="search" class="form-control rounded-pill mb-2" placeholder="Search name or area">
+
+        <div class="filter-title">Sort by</div>
+        <select name="sort" class="form-select form-select-sm rounded-pill">
+            {% for key, label in sorts.items() %}
+                <option value="{{ key }}" {{ 'selected' if key == sort }}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <div class="filter-title">Coffee up to <strong id="price-out">£{{ '%g' % max_price }}</strong></div>
+        <input type="range" class="form-range" name="max_price" min="1" max="{{ price_ceiling }}" step="0.5" value="{{ max_price }}"
+               oninput="document.getElementById('price-out').textContent = '£' + this.value">
+
+        <div class="filter-title">Productivity</div>
+        {% for key, label in [('wifi', 'Wi-Fi'), ('sockets', 'Sockets'), ('calls', 'Calls')] %}
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="f-{{ key }}" name="{{ key }}" value="1" {{ 'checked' if request.args.get(key) == '1' }}>
+            <label class="form-check-label" for="f-{{ key }}">{{ label }}</label>
+        </div>
+        {% endfor %}
+        <div class="filter-title">Space</div>
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="f-toilet" name="toilet" value="1" {{ 'checked' if request.args.get('toilet') == '1' }}>
+            <label class="form-check-label" for="f-toilet">Restroom</label>
+        </div>
+    </form>
+    {% if filters_active %}
+        <a href="{{ url_for('home') }}" class="btn btn-sm btn-soft mt-3">Reset</a>
+    {% else %}
+        <span class="btn btn-sm btn-soft mt-3 disabled">Reset</span>
+    {% endif %}
+    <a href="{{ url_for('add_cafe_page') }}" class="btn btn-sm btn-cozy mt-3">Add cafe</a>
+</section>
+
+<section class="list">
+    <h1 class="h2 cozy-title">London</h1>
+    <p class="text-muted">Work-friendly cafes with Wi-Fi, sockets and good coffee.</p>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0 cozy-title"><span id="count">{{ cafes|length }}</span> work-friendly places</h2>
+        <button id="near-me" type="button" class="btn btn-sm btn-soft">&#128205; Near me</button>
+    </div>
+    {% for cafe in cafes %}
+    <article class="cafe-item"
+             data-name="{{ cafe.name|lower }} {{ cafe.location|lower }}"
+             data-wifi="{{ 1 if cafe.has_wifi else 0 }}" data-sockets="{{ 1 if cafe.has_sockets else 0 }}"
+             data-calls="{{ 1 if cafe.can_take_calls else 0 }}" data-toilet="{{ 1 if cafe.has_toilet else 0 }}"
+             data-title="{{ cafe.name }}" data-page="{{ url_for('cafe_page', cafe_id=cafe.id) }}"
+             data-info="{{ cafe.location }} · {{ cafe.coffee_price or 'price n/a' }}" data-query="{{ cafe.name ~ ', ' ~ cafe.location ~ ', London' }}"
+             data-url="{{ cafe.map_url }}"
+             data-lat="{{ cafe.lat if cafe.lat is not none else '' }}" data-lng="{{ cafe.lng if cafe.lng is not none else '' }}">
+        <img src="{{ cafe.img_url }}" alt="{{ cafe.name }}" data-cafe-img>
+        <div class="flex-grow-1">
+            <h2><a href="{{ url_for('cafe_page', cafe_id=cafe.id) }}" class="text-reset text-decoration-none stretched-link">{{ cafe.name }}</a> <small class="dist text-muted fs-6" hidden></small></h2>
+            <div class="text-muted small mb-2">📍 {{ cafe.location }} · {{ cafe.seats }} seats · ☕ {{ cafe.coffee_price or "n/a" }}</div>
+            {% for emoji, label, ok in [("&#128246;", "Wi-Fi", cafe.has_wifi), ("&#128268;", "Sockets", cafe.has_sockets), ("&#128222;", "Calls", cafe.can_take_calls), ("&#128699;", "Restroom", cafe.has_toilet)] %}
+                <span class="amenity sm {{ 'yes' if ok else 'no' }}"><span>{{ emoji|safe }}</span>{{ label }}</span>
+            {% endfor %}
+        </div>
+        {% if is_admin %}
+        <form method="post" action="{{ url_for('delete_cafe_page', cafe_id=cafe.id) }}"
+              onsubmit="return confirm('Delete {{ cafe.name|e }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-quiet">Delete</button>
+        </form>
+        {% endif %}
+    </article>
+    {% endfor %}
+    {% if not cafes %}
+    <div class="text-muted">
+        <p>No cafes in the database match{% if q %} &ldquo;{{ q }}&rdquo;{% else %} these filters{% endif %}.</p>
+        {% if q %}<button id="find-on-map" type="button" class="btn btn-sm btn-soft" data-q="{{ q }}">Find &ldquo;{{ q }}&rdquo; on the map</button>{% endif %}
+    </div>
+    {% endif %}
+</section>
+
+<section class="map-col">
+    <div id="map"></div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+    const items = [...document.querySelectorAll(".cafe-item")];
+    const search = document.getElementById("search");
+
+    const map = L.map("map").setView([51.51, -0.1], 11);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19, attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    const icon = cls => L.divIcon({
+        className: "", iconSize: [34, 34], iconAnchor: [17, 34], popupAnchor: [0, -34],
+        html: `<div class="pin ${cls}"><span>\u2615</span></div>`
+    });
+
+    function popupFor(el) {
+        const box = document.createElement("div");
+        const name = document.createElement("strong");
+        name.textContent = el.dataset.title;
+        const info = document.createElement("div");
+        info.className = "text-muted small";
+        info.textContent = el.dataset.info;
+        box.append(name, info);
+        return box;
+    }
+
+    // Hovering a card or a marker highlights both and shows the tooltip on the map.
+    function highlight(el, on) {
+        el.classList.toggle("hover", on);
+        const m = el._marker;
+        if (!m) return;
+        m.setIcon(icon(on ? "selected" : ""));
+        m.setZIndexOffset(on ? 1000 : 0);
+        if (on) {
+            m.openPopup();
+            if (!map.getBounds().contains(m.getLatLng())) map.panTo(m.getLatLng());
+        } else {
+            m.closePopup();
+        }
+    }
+
+    items.forEach(el => {
+        const lat = parseFloat(el.dataset.lat), lng = parseFloat(el.dataset.lng);
+        if (!isNaN(lat) && !isNaN(lng)) {
+            el._marker = L.marker([lat, lng], { icon: icon("") }).addTo(map)
+                .bindPopup(popupFor(el), { closeButton: false, autoPan: false });
+            el._marker.on("mouseover", () => highlight(el, true));
+            el._marker.on("mouseout", () => highlight(el, false));
+            el._marker.on("click", () => { window.location.href = el.dataset.page; });
+        }
+        el.addEventListener("mouseenter", () => highlight(el, true));
+        el.addEventListener("mouseleave", () => highlight(el, false));
+    });
+
+    // Filters, sort and search are handled by the server: submit on change (Enter submits the search box).
+    document.querySelectorAll("#filter-form input:not([type=search]), #filter-form select")
+        .forEach(c => c.addEventListener("change", () => c.form.submit()));
+
+    // "Find X on the map" when the database has nothing for the search text.
+    const findBtn = document.getElementById("find-on-map");
+    if (findBtn) findBtn.addEventListener("click", async () => {
+        const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(findBtn.dataset.q));
+        const data = await r.json();
+        if (data.length) map.flyTo([data[0].lat, data[0].lon], 12, { duration: 0.8 });
+        else findBtn.textContent = "Place not found";
+    });
+
+    // "Near me": sort the visible cards by distance from the browser's location.
+    function km(lat1, lng1, lat2, lng2) {
+        const rad = d => d * Math.PI / 180, dLat = rad(lat2 - lat1), dLng = rad(lng2 - lng1);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2;
+        return 6371 * 2 * Math.asin(Math.sqrt(a));
+    }
+    const nearBtn = document.getElementById("near-me");
+    let youMarker = null;
+    nearBtn.addEventListener("click", () => {
+        if (!navigator.geolocation) { nearBtn.textContent = "Location not supported"; return; }
+        nearBtn.disabled = true;
+        navigator.geolocation.getCurrentPosition(pos => {
+            const { latitude: lat, longitude: lng } = pos.coords;
+            const list = items[0] ? items[0].parentElement : null;
+            const withDistance = items.filter(el => el._marker).map(el => ({
+                el, d: km(lat, lng, parseFloat(el.dataset.lat), parseFloat(el.dataset.lng))
+            })).sort((x, y) => x.d - y.d);
+            withDistance.forEach(({ el, d }) => {
+                const label = el.querySelector(".dist");
+                label.textContent = "\u00b7 " + (d < 1 ? Math.round(d * 1000) + " m" : d.toFixed(1) + " km");
+                label.hidden = false;
+            });
+            withDistance.forEach(({ el }) => list.appendChild(el));  // re-append in distance order
+            if (youMarker) youMarker.remove();
+            youMarker = L.circleMarker([lat, lng], { radius: 9, color: "#fff", weight: 3, fillColor: "#2b7de9", fillOpacity: 1 }).addTo(map).bindTooltip("You are here");
+            if (withDistance.length) map.flyToBounds(L.latLngBounds([[lat, lng], withDistance[0].el._marker.getLatLng()]).pad(0.4), { duration: 0.8 });
+            nearBtn.disabled = false;
+        }, () => { nearBtn.disabled = false; nearBtn.textContent = "Location blocked"; });
+    });
+</script>
+{% endblock %}

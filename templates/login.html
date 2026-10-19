@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from 'bootstrap5/form.html' import render_field %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<h1 class="mb-4 cozy-title">Log in</h1>
+<p class="text-muted">Editing and deleting cafes is only for the site owner.</p>
+<form method="post" novalidate style="max-width: 420px;">
+    {{ form.hidden_tag() }}
+    {{ render_field(form.password) }}
+    <div class="d-flex gap-2 mt-3">
+        {{ form.submit(class="btn btn-cozy px-4") }}
+        <a href="{{ url_for('home') }}" class="btn btn-soft px-4">Cancel</a>
+    </div>
+</form>
+{% endblock %}
